@@ -5,7 +5,7 @@ from datetime import datetime
 
 # 고유한 문서 ID 생성 함수
 def generate_document_id() -> str:
-    return f"doc_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{uuid.uuid4()[:8]}"
+    return f"doc_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{str(uuid.uuid4())[:8]}"
 
 def save_uploaded_file(file_path: str, upload_dir: str) -> str:
     # 업로드 디렉토리가 존재하지 않으면 생성
