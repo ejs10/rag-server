@@ -1,6 +1,7 @@
 from typing import List, Dict, Optional
 import os
 from datetime import datetime
+import json
 from app.services.document_loader import DocumentLoader
 from app.services.vector_store import VectorStore
 from app.services.text_splitter import TextSplitter
@@ -20,9 +21,28 @@ class RAGPipeline:
         )
         self.embedding_service = EmbeddingService()
         self.vector_store = VectorStore()
-        self.documents_metadata = {}  # document_id -> metadata
 
-    def process_and_store_document(self, file_path: str, filename:str) -> str:
+        self.metadata_file = os.path.join(settings.VECTOR_DB_PATH, "metadata.json")
+        self.documents_metadata = {}  # document_id -> metadata
+    
+    def _load_metadata(self):
+        if os.path.exists(self.metadata_file):
+            try:
+                with open(self.metadata_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"메타데이터 로드 실패: {e}")
+        return {}
+    
+    def _save_metadata(self):
+        try:
+            with open(self.metadata_file, "w", encoding="utf-8") as f:
+                json.dump(self.documents_metadata, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            logger.error(f"메타데이터 저장 실패: {e}")
+
+
+    def process_document(self, file_path: str, filename:str) -> str:
         """
         문서 전체 처리 파이프라인
         
@@ -57,11 +77,13 @@ class RAGPipeline:
                 "upload_time": upload_time,
                 "total_chunks": len(chunks)
             }
+            #메타데이터 저장
+            self._save_metadata()
 
             # 벡터 DB 저장
             self.vector_store.add_documents(
                 document_id = document_id, 
-                embeddings = embeddings, 
+                embeddings = embeddings.tolist(), 
                 chunks = chunks
                 )
             logger.info(f"문서 처리 및 저장 완료:  {document_id}")

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pathlib import Path
 from app.core.config import settings
 from app.services.rag_pipeline import RAGPipeline
 from app.models.schemas import UploadResponse
 from app.utils.logger import logger
+
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 rag_pipeline = RAGPipeline()
@@ -27,24 +29,29 @@ async def upload_document(file: UploadFile = File(...)):
                 status_code=400,
                 detail=f"지원되지 않는 파일 형식입니다. {allowed_extensions} 중 하나의 형식을 사용해주세요."
             )
-        # 파일 크기 검증
+        #파일 저장 경로 설정
+        upload_dir = Path(settings.UPLOAD_DIR)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = upload_dir / file.filename
+
+        #파일 읽기 및 저장
         contents = await file.read()
-        file_size = len(contents) / (1024 * 1024)  # MB 단위
-        if file_size > settings.MAX_FILE_SIZE_MB:
+
+        # 파일 크기 검증
+        max_size = getattr(settings, "MAX_FILE_SIZE_MB", 50)  # 기본값 50MB
+        file_size_mb = len(contents) / (1024 * 1024)  # MB 단위
+        if file_size_mb > max_size:
             raise HTTPException(
                 status_code=413,
-                detail=f"파일 크기초과 :{file_size:.2f} MB, {settings.MAX_FILE_SIZE_MB} MB."
+                detail=f"파일 크기초과 :{file_size_mb:.2f} MB, {max_size} MB."
             )
-        
-        # 파일 저장
-        file_path = Path(settings.UPLOAD_DIR) / file.filename
-        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, "wb") as f:
             f.write(contents)
 
         # RAG 파이프라인 처리 및 벡터 DB 저장
-        result = rag_pipeline.process_document(
+        result = await run_in_threadpool(
+            rag_pipeline.process_document,
             file_path=str(file_path),
             filename=file.filename
         )
