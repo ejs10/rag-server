@@ -6,7 +6,7 @@ from app.utils.logger import logger
 router = APIRouter(prefix="/documents", tags=["documents"])
 rag_pipeline = RAGPipeline()
 
-@router.get("", response_model=DocumentResponse)
+@router.get("", response_model=DocumentListResponse)
 async def list_documents():
     """업로드된 문서 리스트 조회"""
     try:
