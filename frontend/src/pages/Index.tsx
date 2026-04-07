@@ -13,8 +13,9 @@ const Index = () => {
     try {
       const data = await fetchDocuments();
       setDocuments(data.documents);
-    } catch {
-      // silently fail
+    } catch (error) {
+      console.error("Failed to fetch documents:", error);
+      // 에러 발생 시에도 계속 진행
     }
   }, []);
 

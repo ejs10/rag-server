@@ -3,7 +3,7 @@ from app.core.config import settings
 from app.utils.logger import logger
 
 class LLMService:
-    """LLM 호출 서비스 (OpenAI, Ollama)"""
+    """LLM 호출 서비스 (OpenAI, Ollama, Gemini)"""
     def __init__(self):
         self.provider = settings.LLM_PROVIDER
         self.model = None
@@ -17,6 +17,25 @@ class LLMService:
                 from openai import OpenAI
                 self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
                 self.model = settings.OPENAI_CHAT_MODEL
+
+            elif self.provider == "upstage":
+                from openai import OpenAI
+                self.client = OpenAI(
+                    api_key=settings.UPSTAGE_API_KEY,
+                    base_url="https://api.upstage.ai/v1"
+                )
+                self.model = settings.UPSTAGE_CHAT_MODEL  # 업스테이지 모델
+                logger.info(f"Upstage(Solar) LLM 초기화: {self.model}")
+
+            elif self.provider == "gemini":
+                from openai import OpenAI
+                self.client = OpenAI(
+                    api_key=settings.GEMINI_API_KEY,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                )
+                self.model = settings.GEMINI_CHAT_MODEL  # 빠르고 강력한 무료 모델
+                logger.info(f"Gemini LLM 초기화: {self.model}")
+
             elif self.provider == "ollama":
                 from openai import OpenAI
                 self.client = OpenAI(
