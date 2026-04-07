@@ -69,6 +69,7 @@ data/
 *.bin
 vector_store/
 models/
+app/db/vector_db/
 
 # Other
 .DS_Store
