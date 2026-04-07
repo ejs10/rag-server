@@ -8,7 +8,7 @@ interface Props {
   documents: Document[];
   selectedDocId: string | null;
   onSelectDoc: (id: string | null) => void;
-  onUploadSuccess: () => void;
+  onUploadSuccess: () => void | Promise<void>;
 }
 
 export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc, onUploadSuccess }: Props) {
@@ -24,7 +24,13 @@ export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc,
         await uploadDocument(file);
       }
       setUploadStatus("success");
-      onUploadSuccess();
+      
+      // 백엔드가 문서를 저장할 시간을 주기 위해 500ms 대기
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 문서 목록 새로고침 (완료될 때까지 대기)
+      await onUploadSuccess();
+      
       setTimeout(() => setUploadStatus("idle"), 2000);
     } catch {
       setUploadStatus("error");
@@ -42,6 +48,13 @@ export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc,
     },
     disabled: uploading,
   });
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
 
   const getFileIcon = (filename: string) => {
     const ext = filename.split(".").pop()?.toLowerCase();
@@ -123,7 +136,10 @@ export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc,
                   )}
                 >
                   {getFileIcon(doc.filename)}
-                  <span className="truncate flex-1">{doc.filename}</span>
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="truncate text-sm">{doc.filename}</span>
+                    <span className="text-[10px] opacity-50">{formatFileSize(doc.file_size)}</span>
+                  </div>
                   {selectedDocId === doc.document_id && (
                     <span className="w-2 h-2 rounded-full bg-sidebar-panel-accent flex-shrink-0" />
                   )}
