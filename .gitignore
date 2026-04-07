@@ -68,7 +68,6 @@ data/
 *.model
 *.bin
 vector_store/
-models/
 app/db/vector_db/
 
 # Other
