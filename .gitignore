@@ -76,7 +76,7 @@ models/
 .env.development.local
 .env.test.local
 .env.production.local
-.pickle
+*.pickle
 
 
 # Logs
