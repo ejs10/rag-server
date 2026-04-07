@@ -11,11 +11,21 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_CHAT_MODEL: str = "gpt-3.5-turbo"
     
-    # LLM 제공자 (openai, ollama)
-    LLM_PROVIDER: str = "openai"
+    # LLM 제공자 (openai, ollama, gemini)
+    LLM_PROVIDER: str = "upstage" 
+    
+    # Ollama 설정 (LLM_PROVIDER=ollama일 때)
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "mistral"
-    
+
+    # Upstage
+    UPSTAGE_API_KEY: str = ""
+    UPSTAGE_CHAT_MODEL: str = "solar-pro"
+
+    # Gemini 설정
+    GEMINI_API_KEY: str = ""
+    GEMINI_CHAT_MODEL: str = "gemini-2.0-flash"
+
     # 임베딩 제공자 (openai, huggingface)
     EMBEDDING_PROVIDER: str = "huggingface"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
