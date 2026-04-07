@@ -106,3 +106,10 @@ class RAGPipeline:
     def get_document_metadata(self, document_id: str) -> Optional[Dict]:
         """특정 문서 메타데이터 반환"""
         return self.documents_metadata.get(document_id)
+    
+shared_rag_pipeline = RAGPipeline()
+
+def __init__(self):
+    ...
+    self.metadata_file = os.path.join(settings.VECTOR_DB_PATH, "metadata.json")
+    self.documents_metadata = self._load_metadata()
