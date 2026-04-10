@@ -2,13 +2,12 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pathlib import Path
 from app.core.config import settings
-from app.services.rag_pipeline import RAGPipeline
+from app.services.rag_pipeline import shared_rag_pipeline
 from app.models.schemas import UploadResponse
 from app.utils.logger import logger
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-rag_pipeline = RAGPipeline()
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
@@ -51,7 +50,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         # RAG 파이프라인 처리 및 벡터 DB 저장
         result = await run_in_threadpool(
-            rag_pipeline.process_document,
+            shared_rag_pipeline.process_document,
             file_path=str(file_path),
             filename=file.filename
         )

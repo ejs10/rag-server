@@ -23,7 +23,7 @@ class RAGPipeline:
         self.vector_store = VectorStore()
 
         self.metadata_file = os.path.join(settings.VECTOR_DB_PATH, "metadata.json")
-        self.documents_metadata = {}  # document_id -> metadata
+        self.documents_metadata = self._load_metadata()  # document_id -> metadata
     
     def _load_metadata(self):
         if os.path.exists(self.metadata_file):
@@ -108,8 +108,3 @@ class RAGPipeline:
         return self.documents_metadata.get(document_id)
     
 shared_rag_pipeline = RAGPipeline()
-
-def __init__(self):
-    ...
-    self.metadata_file = os.path.join(settings.VECTOR_DB_PATH, "metadata.json")
-    self.documents_metadata = self._load_metadata()
