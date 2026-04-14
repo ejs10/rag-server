@@ -14,6 +14,11 @@ async def health_check():
         environment={
             "llm_provider": settings.LLM_PROVIDER,
             "embedding_provider": settings.EMBEDDING_PROVIDER,
-            "debug": settings.DEBUG
+            "debug": settings.DEBUG,
+            # [추가] LangChain/LangSmith/LangGraph 상태
+            "langsmith_tracing": getattr(settings, "LANGSMITH_TRACING_ENABLED", False)
+                                and bool(getattr(settings, "LANGSMITH_API_KEY", "")),
+            "langsmith_project": getattr(settings, "LANGSMITH_PROJECT", ""),
+            "langgraph_routing": getattr(settings, "LANGGRAPH_ROUTING_ENABLED", False),
         }
     )

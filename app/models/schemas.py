@@ -71,3 +71,61 @@ class HealthResponse(BaseModel):
     status: str #상태 (예: "ok")0
     version: str #버전 정보
     environment: dict #환경 정보 (예: {"debug": true})
+
+# [추가] LangGraph 워크플로우용 스키마
+class LangGraphQueryRequest(BaseModel):
+    """워크플로우 요청"""
+    question: str #질문 텍스트
+    document_id: Optional[str] = None  # 특정 문서만 검색 시
+    session_id: str #세션 ID (대화 세션 구분용)
+    top_k: int = 4 #검색 결과로 반환할 상위 K개 청크 수
+    use_rerank: bool = False #Reranking 사용 여부
+    use_query_rewriting: bool = True #질문 재작성 사용 여부
+
+class LangGraphQueryResponse(BaseModel):
+    """워크플로우 응답"""
+    answer: str #LLM이 생성한 답변 텍스트
+    sources: List[Source] #검색 결과 출처 목록
+    session_id: str #세션 ID (대화 세션 구분용)
+    rewritten_query: Optional[str] = None #재작성된 질문 (질문 재작성 사용 시)
+    route: Optional[str] = None #워크플로우 경로 (예: ["retrieval", "reranking", "generation"])
+    node_trace: Optional[List[str]] = None  # 실행된 노드 추적
+
+# [추가] LangSmith 평가용 스키마
+class DatasetExample(BaseModel):
+    question: str
+    expected_answer: Optional[str] = None
+    context: Optional[str] = None
+    document_id: Optional[str] = None
+ 
+ 
+class CreateDatasetRequest(BaseModel):
+    dataset_name: str
+    description: str = ""
+    examples: List[DatasetExample]
+ 
+ 
+class CreateDatasetResponse(BaseModel):
+    dataset_id: Optional[str]
+    dataset_name: str
+    example_count: int
+    status: str
+ 
+ 
+class RunEvalRequest(BaseModel):
+    dataset_name: str
+    experiment_prefix: str = "rag-eval"
+ 
+ 
+class RunEvalResponse(BaseModel):
+    status: str
+    experiment_prefix: str
+    dataset_name: str
+    error: Optional[str] = None
+ 
+ 
+class FeedbackRequest(BaseModel):
+    run_id: str
+    key: str
+    score: float
+    comment: str = ""

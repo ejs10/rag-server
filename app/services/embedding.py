@@ -66,3 +66,24 @@ class EmbeddingService:
         """단일 텍스트 임베딩"""
         embeddings = self.embed([text])
         return embeddings[0].tolist()
+    
+# [추가] LangChain Embeddings 래퍼 클래스
+from langchain_core.embeddings import Embeddings as LangChainEmbeddingsBase
+
+class LangChainEmbeddingsWrapper(LangChainEmbeddingsBase):
+    """
+    기존 EmbeddingService를 LangChain Embeddings 인터페이스로 래핑.
+    LangChain의 VectorStore, Retriever 등과 호환됩니다.
+    """
+ 
+    def __init__(self, embedding_service: EmbeddingService):
+        self._service = embedding_service
+ 
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """문서 리스트 임베딩 (LangChain 인터페이스)"""
+        result = self._service.embed(texts)
+        return result.tolist()
+ 
+    def embed_query(self, text: str) -> List[float]:
+        """쿼리 임베딩 (LangChain 인터페이스)"""
+        return self._service.embed_single(text)
