@@ -11,8 +11,9 @@ def save_uploaded_file(file_path: str, upload_dir: str) -> str:
     # 업로드 디렉토리가 존재하지 않으면 생성
     Path(upload_dir).mkdir(parents=True, exist_ok=True)
 
-    frile_name = os.path.basename(file_path)
-    save_path = os.path.join(upload_dir, frile_name)
+
+    file_name = os.path.basename(file_path)
+    save_path = os.path.join(upload_dir, file_name)
 
     # 파일을 업로드 디렉토리로 이동
     # destination = os.path.join(upload_dir, os.path.basename(file_path))
