@@ -32,7 +32,7 @@ class DocumentLoader:
             if not text.strip():
                 logger.warning(f"PDF에서 텍스트를 추출할 수 없습니다: {file_path}")
             
-            logger.info(f"PDF 파싱 완료: {file_path}, 크기: {len(text)} 글자")
+            logger.debug(f"PDF 파싱 완료: {file_path}, 크기: {len(text)} 글자")
             return text, page_numbers
             
         except Exception as e:
@@ -52,7 +52,7 @@ class DocumentLoader:
             words = text.split()
             page_numbers = [1] * len(words)
             
-            logger.info(f"텍스트 파일 로드 완료: {file_path}, 크기: {len(text)} 글자")
+            logger.debug(f"텍스트 파일 로드 완료: {file_path}, 크기: {len(text)} 글자")
             return text, page_numbers
             
         except Exception as e:

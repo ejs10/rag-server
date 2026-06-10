@@ -174,7 +174,7 @@ eval_router = APIRouter(prefix="/eval", tags=["evaluation"])
 async def create_dataset(request: CreateDatasetRequest):
     """평가 데이터셋 생성"""
     try:
-        from app.services.rag_pipeline import create_eval_dataset
+        from app.services.evaluation import create_eval_dataset
         examples = [ex.model_dump() for ex in request.examples]
         dataset_id = await run_in_threadpool(
             create_eval_dataset,
@@ -197,7 +197,7 @@ async def create_dataset(request: CreateDatasetRequest):
 async def get_datasets():
     """평가 데이터셋 목록 조회"""
     try:
-        from app.services.rag_pipeline import list_eval_datasets
+        from app.services.evaluation import list_eval_datasets
         datasets = await run_in_threadpool(list_eval_datasets)
         return {"datasets": datasets, "count": len(datasets)}
     except Exception as e:
@@ -209,7 +209,7 @@ async def get_datasets():
 async def execute_evaluation(request: RunEvalRequest):
     """평가 실행"""
     try:
-        from app.services.rag_pipeline import run_evaluation
+        from app.services.evaluation import run_evaluation
         result = await run_in_threadpool(
             run_evaluation,
             dataset_name=request.dataset_name,
@@ -237,7 +237,7 @@ async def execute_evaluation(request: RunEvalRequest):
 async def submit_feedback(request: FeedbackRequest):
     """LangSmith에 피드백 제출"""
     try:
-        from app.services.rag_pipeline import log_feedback
+        from app.services.evaluation import log_feedback
         success = await run_in_threadpool(
             log_feedback,
             run_id=request.run_id,

@@ -4,67 +4,62 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from app.core.config import settings
 from app.utils.logger import logger
 
+def get_llm(provider: Optional[str] = None, temperature: float = 0.2) -> BaseChatModel:
+    """LLM 팩토리 함수: LangChain BaseChatModel 인스턴스 반환"""
+    provider = provider or settings.LLM_PROVIDER
+    try:
+        if provider == "openai":
+            from langchain_openai import ChatOpenAI
+            return ChatOpenAI(
+                api_key=settings.OPENAI_API_KEY,
+                model_name=settings.OPENAI_CHAT_MODEL,
+                temperature=temperature
+            )
+        elif provider == "upstage":
+            from langchain_upstage import ChatUpstage
+            return ChatUpstage(
+                api_key=settings.UPSTAGE_API_KEY,
+                model=settings.UPSTAGE_CHAT_MODEL,
+                temperature=temperature
+            )
+        elif provider == "gemini":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            return ChatGoogleGenerativeAI(
+                google_api_key=settings.GEMINI_API_KEY,
+                model=settings.GEMINI_CHAT_MODEL,
+                temperature=temperature
+            )
+        elif provider == "ollama":
+            from langchain_community.chat_models import ChatOllama
+            return ChatOllama(
+                base_url=settings.OLLAMA_BASE_URL,
+                model=settings.OLLAMA_MODEL,
+                temperature=temperature
+            )
+        elif provider == "anthropic":
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
+                api_key=settings.ANTHROPIC_API_KEY,
+                model_name=settings.ANTHROPIC_CHAT_MODEL,
+                temperature=temperature
+            )
+        else:
+            raise ValueError(f"지원하지 않는 LLM 공급자: {provider}")
+    except Exception as e:
+        logger.error(f"LLM 초기화 실패 ({provider}): {e}")
+        raise
+
 class LLMService:
-    """LLM 호출 서비스 (OpenAI, Ollama, Gemini)"""
+    """하위 호환성을 위한 LLM 호출 서비스 래퍼"""
     def __init__(self):
         self.provider = settings.LLM_PROVIDER
-        self.model = None
-        self.client = None
-        self._initialize()
-
-    def _initialize(self):
-        """LLM 클라이언트 초기화"""
-        try:
-            if self.provider == "openai":
-                from openai import OpenAI
-                self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-                self.model = settings.OPENAI_CHAT_MODEL
-
-            elif self.provider == "upstage":
-                from openai import OpenAI
-                self.client = OpenAI(
-                    api_key=settings.UPSTAGE_API_KEY,
-                    base_url="https://api.upstage.ai/v1"
-                )
-                self.model = settings.UPSTAGE_CHAT_MODEL  # 업스테이지 모델
-                logger.info(f"Upstage(Solar) LLM 초기화: {self.model}")
-
-            elif self.provider == "gemini":
-                from openai import OpenAI
-                self.client = OpenAI(
-                    api_key=settings.GEMINI_API_KEY,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-                )
-                self.model = settings.GEMINI_CHAT_MODEL  # 빠르고 강력한 무료 모델
-                logger.info(f"Gemini LLM 초기화: {self.model}")
-
-            elif self.provider == "ollama":
-                from openai import OpenAI
-                self.client = OpenAI(
-                    base_url=settings.OLLAMA_BASE_URL + "/v1",
-                    api_key="ollama"
-                )
-                self.model = settings.OLLAMA_MODEL
-            else:
-                raise ValueError(f"지원하지 않는 LLM 공급자: {self.provider}")
-        except Exception as e:
-            raise
+        self.model = get_llm(self.provider)
+        logger.info(f"LLM 초기화 완료: {self.provider}")
 
     def generate_answer(self, question: str, context: str, 
                        chat_history: List[Dict] = None) -> str:
-        """
-        문맥과 질문을 바탕으로 답변 생성
-        
-        Args:
-            question: 사용자 질문
-            context: 검색된 문서 내용
-            chat_history: 대화 히스토리 (선택사항)
-        
-        Returns:
-            LLM 생성 답변
-        """
+        """문맥과 질문을 바탕으로 답변 생성"""
         try:
-            # 시스템 프롬프트: RAG 원칙 강조
             system_prompt = """당신은 제공된 문서를 기반으로 답변하는 도우미입니다.
 
 중요한 규칙:
@@ -72,35 +67,26 @@ class LLMService:
 2. 문서에 없는 내용은 추측하지 마세요
 3. 답변할 수 없으면 "문서에서 찾을 수 없습니다"라고 말하세요
 4. 항상 사실에 기반한 답변을 제공하세요"""
-            messages = [{"role": "system", "content": system_prompt}]
+            messages = [SystemMessage(content=system_prompt)]
+            
             if chat_history:
                 for msg in chat_history:
-                    messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
+                    if msg["role"] == "user":
+                        messages.append(HumanMessage(content=msg["content"]))
+                    else:
+                        messages.append(AIMessage(content=msg["content"]))
             
-            # 현재 질문 (문맥 포함)
-            user_message = f"""참고 문서:
-{context}
-
-질문: {question}"""
-            messages.append({"role": "user", "content": user_message})
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=1024,
-                temperature=0.2
-            )
-
-            answer = response.choices[0].message.content
-            logger.info(f"LLM 답변 생성 완료")
-            return answer
+            user_message = f"참고 문서:\n{context}\n\n질문: {question}"
+            messages.append(HumanMessage(content=user_message))
+            
+            response = self.model.invoke(messages)
+            logger.debug("LLM 답변 생성 완료")
+            return response.content
         except Exception as e:
             logger.error(f"LLM 답변 생성 오류: {str(e)}")
             raise
 
-# [추가] LangChain 프롬프트 템플릿 (기존 langchain_prompts.py 통합)
+# LangChain 프롬프트 템플릿
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -188,54 +174,4 @@ DOCUMENT_RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
     ),
 ])
 
-
-# [추가] LangChain ChatModel 래퍼 클래스
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
-from langchain_core.outputs import ChatResult, ChatGeneration
- 
- 
-class LangChainLLMWrapper(BaseChatModel):
-    """
-    기존 LLMService를 LangChain BaseChatModel 인터페이스로 래핑.
-    """
- 
-    model_config = {"arbitrary_types_allowed": True}  # [수정] Pydantic v2 호환
- 
-    llm_service: Any  # [수정] = None 제거 (Pydantic v2에서 None 기본값 문제 방지)
- 
-    def __init__(self, llm_service: LLMService, **kwargs):
-        super().__init__(llm_service=llm_service, **kwargs)
- 
-    @property
-    def _llm_type(self) -> str:
-        return f"custom-{self.llm_service.provider}"
- 
-    def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        """LangChain 메시지 형식으로 LLM 호출"""
-        openai_messages = []
-        for msg in messages:
-            if isinstance(msg, SystemMessage):
-                openai_messages.append({"role": "system", "content": msg.content})
-            elif isinstance(msg, HumanMessage):
-                openai_messages.append({"role": "user", "content": msg.content})
-            elif isinstance(msg, AIMessage):
-                openai_messages.append({"role": "assistant", "content": msg.content})
-            else:
-                openai_messages.append({"role": "user", "content": msg.content})
- 
-        response = self.llm_service.client.chat.completions.create(
-            model=self.llm_service.model,
-            messages=openai_messages,
-            max_tokens=kwargs.get("max_tokens", 1024),
-            temperature=kwargs.get("temperature", 0.2),
-        )
- 
-        content = response.choices[0].message.content
-        generation = ChatGeneration(message=AIMessage(content=content))
-        return ChatResult(generations=[generation])
+# LangChainLLMWrapper 클래스는 더이상 불필요하므로 제거됨.
