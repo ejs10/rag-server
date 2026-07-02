@@ -38,37 +38,36 @@ export default function MessageBubble({ message }: { message: Message }) {
           )}
         </div>
 
-        {/* Sources toggle */}
-        {!isUser && message.sources && message.sources.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowSources(!showSources)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1 ml-1"
-            >
-              {showSources ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              참고 출처 ({message.sources.length}건)
-            </button>
+        {/* 출처 패널: URL 소스 기능 추가 시 false를 조건으로 교체 */}
+        {false && !isUser && message.sources && message.sources.length > 0 && (() => {
+          const uniqueSources = Array.from(
+            new Map(message.sources.map((s) => [s.filename ?? s.document_id, s])).values()
+          );
+          return (
+            <div>
+              <button
+                onClick={() => setShowSources(!showSources)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1 ml-1"
+              >
+                {showSources ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                참고 출처 ({uniqueSources.length}건)
+              </button>
 
-            {showSources && (
-              <div className="mt-2 space-y-2">
-                {message.sources.map((src, i) => (
-                  <div key={i} className="bg-source border border-source-border rounded-lg px-3 py-2.5 text-xs">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-medium text-muted-foreground">출처 #{i + 1}</span>
-                      <span className="text-source-score font-semibold">
-                        유사도: {(src.score * 100).toFixed(1)}%
+              {showSources && (
+                <div className="mt-2 space-y-1">
+                  {uniqueSources.map((src, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-source border border-source-border rounded-md px-3 py-1.5 text-xs text-muted-foreground">
+                      <span className="text-base leading-none">📄</span>
+                      <span className="font-medium text-foreground/75 truncate">
+                        {src.filename ?? src.document_id ?? `출처 #${i + 1}`}
                       </span>
                     </div>
-                    <p className="text-foreground/80 leading-relaxed line-clamp-4 whitespace-pre-wrap">{src.text}</p>
-                    {src.filename && (
-                      <p className="mt-1.5 text-muted-foreground">📄 {src.filename}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

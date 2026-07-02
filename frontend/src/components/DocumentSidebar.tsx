@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { FileText, Upload, Loader2, Check, X } from "lucide-react";
-import { uploadDocument, type Document } from "@/lib/api";
+import { FileText, Upload, Loader2, Check, X, Trash2 } from "lucide-react";
+import { uploadDocument, deleteDocument, type Document } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -14,6 +14,19 @@ interface Props {
 export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc, onUploadSuccess }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "success" | "error">("idle");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = useCallback(async (e: React.MouseEvent, documentId: string) => {
+    e.stopPropagation();
+    setDeletingId(documentId);
+    try {
+      await deleteDocument(documentId);
+      if (selectedDocId === documentId) onSelectDoc(null);
+      await onUploadSuccess();
+    } finally {
+      setDeletingId(null);
+    }
+  }, [selectedDocId, onSelectDoc, onUploadSuccess]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -125,7 +138,7 @@ export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc,
         ) : (
           <ul className="space-y-1">
             {documents.map((doc) => (
-              <li key={doc.document_id}>
+              <li key={doc.document_id} className="group">
                 <button
                   onClick={() => onSelectDoc(selectedDocId === doc.document_id ? null : doc.document_id)}
                   className={cn(
@@ -140,7 +153,18 @@ export default function DocumentSidebar({ documents, selectedDocId, onSelectDoc,
                     <span className="truncate text-sm">{doc.filename}</span>
                     <span className="text-[10px] opacity-50">{formatFileSize(doc.file_size)}</span>
                   </div>
-                  {selectedDocId === doc.document_id && (
+                  {deletingId === doc.document_id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin opacity-50 flex-shrink-0" />
+                  ) : (
+                    <button
+                      onClick={(e) => handleDelete(e, doc.document_id)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-red-400 transition-opacity flex-shrink-0"
+                      title="삭제"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {selectedDocId === doc.document_id && deletingId !== doc.document_id && (
                     <span className="w-2 h-2 rounded-full bg-sidebar-panel-accent flex-shrink-0" />
                   )}
                 </button>

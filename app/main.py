@@ -4,8 +4,6 @@ from app.core.config import settings
 from app.api.routes import health, documents, upload, chat
 from app.utils.logger import logger
 
-
-# FastAPI 앱 생성
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -13,7 +11,7 @@ app = FastAPI(
     description="LLM 기반 문서 Q&A 서버 (RAG)"
 )
 
-# CORS 설정
+# allow_origins=["*"]: 개발 편의용 전체 허용. 운영 환경에서는 특정 도메인으로 제한 권장.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,8 +20,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# 라우터 등록
 app.include_router(health.router)
 app.include_router(upload.router)
 app.include_router(documents.router)
@@ -32,7 +28,9 @@ app.include_router(chat.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """애플리케이션 시작"""
+    """
+    서버 시작 시 실행되는 초기화 핸들러.
+    """
     logger.info(f"=== {settings.APP_NAME} 시작 ===")
     logger.info(f"LLM Provider: {settings.LLM_PROVIDER}")
     logger.info(f"Embedding Provider: {settings.EMBEDDING_PROVIDER}")
@@ -41,13 +39,11 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """애플리케이션 종료"""
     logger.info(f"=== {settings.APP_NAME} 종료 ===")
 
 
 @app.get("/")
 async def root():
-    """루트 엔드포인트"""
     return {
         "name": settings.APP_NAME,
         "version": settings.APP_VERSION,

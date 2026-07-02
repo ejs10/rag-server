@@ -6,20 +6,20 @@ from app.services.rag_pipeline import shared_rag_pipeline
 from app.models.schemas import UploadResponse
 from app.utils.logger import logger
 
-
 router = APIRouter(prefix="/documents", tags=["documents"])
+
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """
-    PDF/텍스트 문서 업로드
-    
-    - 파일 검증
-    - 문서 처리 (파싱 -> 청킹 -> 임베딩)
-    - 벡터 DB 저장
+    문서를 업로드하고 RAG 파이프라인으로 처리한다.
+    파일 검증 → 디스크 저장 → 텍스트 파싱 → 청킹 → 임베딩 → 벡터 DB 저장 순서로 진행된다.
+
+    Parameters:
+        file: 업로드할 파일 (PDF, TXT, MD 허용)
     """
     try:
-        # 파일 형식 검증
+        # 허용 확장자 화이트리스트 방식. 블랙리스트보다 안전하다.
         allowed_extensions = [".pdf", ".txt", ".md"]
         file_ext = Path(file.filename).suffix.lower()
 
@@ -28,17 +28,16 @@ async def upload_document(file: UploadFile = File(...)):
                 status_code=400,
                 detail=f"지원되지 않는 파일 형식입니다. {allowed_extensions} 중 하나의 형식을 사용해주세요."
             )
-        #파일 저장 경로 설정
+
         upload_dir = Path(settings.UPLOAD_DIR)
         upload_dir.mkdir(parents=True, exist_ok=True)
         file_path = upload_dir / file.filename
 
-        #파일 읽기 및 저장
         contents = await file.read()
 
-        # 파일 크기 검증
-        max_size = getattr(settings, "MAX_FILE_SIZE_MB", 50)  # 기본값 50MB
-        file_size_mb = len(contents) / (1024 * 1024)  # MB 단위
+        # 파일 내용을 읽은 후에 크기를 확인한다 (읽기 전엔 정확한 크기를 모름).
+        max_size = getattr(settings, "MAX_FILE_SIZE_MB", 50)
+        file_size_mb = len(contents) / (1024 * 1024)
         if file_size_mb > max_size:
             raise HTTPException(
                 status_code=413,
@@ -48,7 +47,7 @@ async def upload_document(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(contents)
 
-        # RAG 파이프라인 처리 및 벡터 DB 저장
+        # process_document()는 동기 함수이므로 run_in_threadpool로 감싸 이벤트 루프 블로킹을 방지한다.
         result = await run_in_threadpool(
             shared_rag_pipeline.process_document,
             file_path=str(file_path),

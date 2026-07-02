@@ -4,8 +4,20 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from app.core.config import settings
 from app.utils.logger import logger
 
+
 def get_llm(provider: Optional[str] = None, temperature: float = 0.2) -> BaseChatModel:
-    """LLM 팩토리 함수: LangChain BaseChatModel 인스턴스 반환"""
+    """
+    설정에 따라 적절한 LLM 인스턴스를 생성해 반환하는 팩토리 함수.
+    LangChain의 공통 인터페이스를 반환하므로, LLM_PROVIDER를 바꿔도 호출 코드를 수정할 필요가 없다.
+
+    Parameters:
+        provider   : LLM 공급자 ("openai", "upstage", "gemini", "ollama", "anthropic").
+                     None이면 config의 LLM_PROVIDER를 사용한다.
+        temperature: 0.0(결정적) ~ 1.0(창의적). RAG는 사실 기반 답변이 중요하므로 기본값 0.2.
+
+    Returns:
+        LangChain BaseChatModel 인터페이스를 구현한 LLM 인스턴스
+    """
     provider = provider or settings.LLM_PROVIDER
     try:
         if provider == "openai":
@@ -49,16 +61,31 @@ def get_llm(provider: Optional[str] = None, temperature: float = 0.2) -> BaseCha
         logger.error(f"LLM 초기화 실패 ({provider}): {e}")
         raise
 
+
 class LLMService:
-    """하위 호환성을 위한 LLM 호출 서비스 래퍼"""
+    """
+    chat.py의 기본 /query 엔드포인트에서 사용하는 LLM 호출 래퍼.
+    LangGraph 워크플로우에서는 get_llm()을 직접 사용한다.
+    """
+
     def __init__(self):
         self.provider = settings.LLM_PROVIDER
         self.model = get_llm(self.provider)
         logger.info(f"LLM 초기화 완료: {self.provider}")
 
-    def generate_answer(self, question: str, context: str, 
-                       chat_history: List[Dict] = None) -> str:
-        """문맥과 질문을 바탕으로 답변 생성"""
+    def generate_answer(self, question: str, context: str,
+                        chat_history: List[Dict] = None) -> str:
+        """
+        검색된 컨텍스트와 질문을 바탕으로 LLM 답변을 생성한다.
+
+        Parameters:
+            question    : 사용자 질문
+            context     : 벡터 검색으로 찾은 관련 문서 청크들
+            chat_history: 이전 대화 목록 [{"role": "user", "content": "..."}]
+
+        Returns:
+            LLM이 생성한 답변 문자열
+        """
         try:
             system_prompt = """당신은 제공된 문서를 기반으로 답변하는 도우미입니다.
 
@@ -67,18 +94,18 @@ class LLMService:
 2. 문서에 없는 내용은 추측하지 마세요
 3. 답변할 수 없으면 "문서에서 찾을 수 없습니다"라고 말하세요
 4. 항상 사실에 기반한 답변을 제공하세요"""
+
             messages = [SystemMessage(content=system_prompt)]
-            
+
             if chat_history:
                 for msg in chat_history:
                     if msg["role"] == "user":
                         messages.append(HumanMessage(content=msg["content"]))
                     else:
                         messages.append(AIMessage(content=msg["content"]))
-            
-            user_message = f"참고 문서:\n{context}\n\n질문: {question}"
-            messages.append(HumanMessage(content=user_message))
-            
+
+            messages.append(HumanMessage(content=f"참고 문서:\n{context}\n\n질문: {question}"))
+
             response = self.model.invoke(messages)
             logger.debug("LLM 답변 생성 완료")
             return response.content
@@ -86,23 +113,23 @@ class LLMService:
             logger.error(f"LLM 답변 생성 오류: {str(e)}")
             raise
 
-# LangChain 프롬프트 템플릿
+
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
     MessagesPlaceholder,
 )
- 
+
 RAG_SYSTEM_PROMPT = """당신은 제공된 문서를 기반으로 답변하는 도우미입니다.
- 
+
 중요한 규칙:
 1. 제공된 문서에서만 정보를 가져와 답변하세요
 2. 문서에 없는 내용은 추측하지 마세요
 3. 답변할 수 없으면 "문서에서 찾을 수 없습니다"라고 말하세요
 4. 항상 사실에 기반한 답변을 제공하세요
 5. 답변은 명확하고 구조적으로 작성하세요"""
- 
+
 RAG_QA_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(RAG_SYSTEM_PROMPT),
     MessagesPlaceholder(variable_name="chat_history", optional=True),
@@ -110,12 +137,13 @@ RAG_QA_PROMPT = ChatPromptTemplate.from_messages([
         "참고 문서:\n{context}\n\n질문: {question}"
     ),
 ])
- 
+
+# 구어체 질문을 명사 중심의 검색 쿼리로 변환한다. 예: "그거 어디서 샀어?" → "제품 구매처 판매 채널"
 QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(
         """당신은 검색 쿼리 최적화 전문가입니다.
 사용자의 질문을 벡터 검색에 최적화된 형태로 재작성하세요.
- 
+
 규칙:
 1. 핵심 키워드와 의미를 보존하세요
 2. 불필요한 조사, 어미를 제거하세요
@@ -128,32 +156,33 @@ QUERY_REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         "원본 질문: {question}\n\n재작성된 검색 쿼리:"
     ),
 ])
- 
+
 QUERY_ROUTING_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(
         """당신은 검색 라우팅 전문가입니다.
 사용자의 질문을 분석하여 가장 적합한 검색 방식을 결정하세요.
- 
+
 검색 방식:
 - "vector": 일반적인 의미 기반 유사도 검색 (대부분의 질문)
 - "graph": 엔티티 간 관계, 연결, 구조를 묻는 질문
 - "hybrid": 복합적 질문 (의미 검색 + 관계 검색 모두 필요)
- 
+
 반드시 "vector", "graph", "hybrid" 중 하나만 답변하세요."""
     ),
     HumanMessagePromptTemplate.from_template("질문: {question}"),
 ])
- 
+
+# Self-RAG: 답변 후 LLM이 스스로 품질을 채점해 미달이면 재시도를 유도한다.
 ANSWER_GRADING_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(
         """당신은 RAG 시스템의 답변 품질 평가자입니다.
 제공된 컨텍스트와 답변을 비교하여 품질을 평가하세요.
- 
+
 평가 기준:
 1. 충실성(faithfulness): 답변이 컨텍스트에 근거하는지 (0.0~1.0)
 2. 관련성(relevance): 답변이 질문에 적절히 대답하는지 (0.0~1.0)
 3. 환각(hallucination): 컨텍스트에 없는 정보가 포함되었는지 (0.0~1.0, 낮을수록 좋음)
- 
+
 JSON 형식으로만 답변하세요:
 {{"faithfulness": 0.0, "relevance": 0.0, "hallucination": 0.0, "explanation": "..."}}"""
     ),
@@ -161,17 +190,16 @@ JSON 형식으로만 답변하세요:
         "컨텍스트:\n{context}\n\n질문: {question}\n\n답변: {answer}\n\n평가:"
     ),
 ])
- 
+
+# "yes"/"no"만 반환하도록 해서 응답 파싱을 단순하게 만든다.
 DOCUMENT_RELEVANCE_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(
         """당신은 문서 관련성 평가자입니다.
 주어진 질문에 대해 검색된 문서가 관련이 있는지 판단하세요.
- 
+
 "yes" 또는 "no"로만 답변하세요."""
     ),
     HumanMessagePromptTemplate.from_template(
         "질문: {question}\n\n문서 내용:\n{document}\n\n관련 여부:"
     ),
 ])
-
-# LangChainLLMWrapper 클래스는 더이상 불필요하므로 제거됨.
