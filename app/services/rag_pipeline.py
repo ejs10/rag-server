@@ -165,6 +165,18 @@ langchain_llm = get_llm()
 langchain_embeddings = LangChainEmbeddingsWrapper(embedding_service=_lc_embedding_service)
 
 
+def _chat_history_to_messages(chat_history: Optional[List[Dict]]) -> List:
+    """대화 히스토리 [{"role", "content"}]를 LangChain HumanMessage/AIMessage 목록으로 변환한다."""
+    messages = []
+    if chat_history:
+        for msg in chat_history:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+    return messages
+
+
 @traceable(name="query_rewrite")
 def rewrite_query(question: str, chat_history: List[Dict] = None) -> str:
     """
@@ -180,13 +192,7 @@ def rewrite_query(question: str, chat_history: List[Dict] = None) -> str:
         재작성된 검색 쿼리 문자열
     """
     try:
-        messages = []
-        if chat_history:
-            for msg in chat_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
+        messages = _chat_history_to_messages(chat_history)
         chain = QUERY_REWRITE_PROMPT | langchain_llm | StrOutputParser()
         rewritten = chain.invoke({
             "question": question,
@@ -311,13 +317,7 @@ def generate_rag_answer(
         LLM이 생성한 답변 문자열
     """
     try:
-        messages = []
-        if chat_history:
-            for msg in chat_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
+        messages = _chat_history_to_messages(chat_history)
         chain = RAG_QA_PROMPT | langchain_llm | StrOutputParser()
         answer = chain.invoke({
             "question": question,

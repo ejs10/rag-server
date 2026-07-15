@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from neo4j import GraphDatabase
 from app.core.config import settings
 from app.utils.logger import logger
-from app.services.llm import get_llm
+from app.services.llm import get_llm, apply_llm_retry
 from langchain_core.prompts import PromptTemplate
 
 
@@ -78,8 +78,10 @@ class GraphStore:
         """
         provider = settings.GRAPH_EXTRACTION_MODEL if settings.GRAPH_EXTRACTION_MODEL else settings.LLM_PROVIDER
         try:
-            llm = get_llm(provider, temperature=0.1)
-            structured_llm = llm.with_structured_output(KnowledgeGraph)
+            # RunnableRetry(재시도 래퍼)는 BaseChatModel의 with_structured_output을 위임하지 않는다.
+            # 원본 모델에 structured output을 먼저 적용한 뒤, 완성된 파이프라인에 재시도를 씌운다.
+            llm = get_llm(provider, temperature=0.1, use_retry=False)
+            structured_llm = apply_llm_retry(llm.with_structured_output(KnowledgeGraph))
 
             prompt = f"""다음 텍스트를 분석하여 중요한 지식 그래프 엔티티와 관계를 추출하세요.
 엔티티는 구체적인 명사(사람, 조직, 기술, 장소, 핵심 개념)로 한정하세요.
@@ -169,8 +171,13 @@ class GraphStore:
         try:
             llm = get_llm(temperature=0.0)
             keyword_prompt = f"다음 질문에서 가장 핵심적인 엔티티(명사) 키워드 3개만 쉼표로 구분하여 출력하세요. 설명 없이 키워드만 나열하세요.\n질문: {query}"
-            keywords_str = llm.invoke(keyword_prompt).content
-            keywords = [k.strip() for k in keywords_str.split(',')]
+            keywords_str = llm.invoke(keyword_prompt).text
+            # 빈 키워드를 걸러내지 않으면 Cypher의 CONTAINS ''가 모든 엔티티에 매칭되어
+            # 질문과 무관한 관계가 결과에 섞여 들어간다.
+            keywords = [k.strip() for k in keywords_str.split(',') if k.strip()]
+            if not keywords:
+                logger.debug("그래프 검색: 유효한 키워드를 추출하지 못해 검색을 건너뜁니다")
+                return []
 
             results = []
             with self.driver.session(database=self.database) as session:

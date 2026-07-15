@@ -1,6 +1,5 @@
 import os
 import uuid
-from pathlib import Path
 from datetime import datetime
 
 
@@ -15,29 +14,26 @@ def generate_document_id() -> str:
     return f"doc_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{str(uuid.uuid4())[:8]}"
 
 
-def save_uploaded_file(file_path: str, upload_dir: str) -> str:
+def sanitize_filename(filename: str) -> str:
     """
-    업로드 디렉토리에 파일 저장 경로를 반환한다.
-    실제 파일 복사는 upload.py에서 직접 처리하므로 여기서는 경로 계산만 수행한다.
+    업로드 파일명에서 경로 조작 시퀀스를 제거하고 순수 파일명만 반환한다.
+    file.filename은 클라이언트가 완전히 제어하는 값이라, "../"나 절대 경로가 섞여 있으면
+    upload_dir 밖에 파일을 쓰는 경로 순회(path traversal) 취약점으로 이어질 수 있다.
 
     Parameters:
-        file_path : 원본 파일 경로
-        upload_dir: 저장할 대상 디렉토리
+        filename: 클라이언트가 전송한 원본 파일명
 
     Returns:
-        최종 저장 경로 문자열
-    """
-    Path(upload_dir).mkdir(parents=True, exist_ok=True)
-    file_name = os.path.basename(file_path)
-    save_path = os.path.join(upload_dir, file_name)
-    return save_path
+        디렉토리 구분자가 제거된 순수 파일명
 
-
-def get_file_extension(file_path: str) -> str:
+    Raises:
+        ValueError: 파일명이 없거나(None), 비어 있거나, "."/".." 뿐인 경우
     """
-    파일 확장자를 소문자로 정규화해 반환한다.
-
-    Returns:
-        ".pdf", ".txt" 형식의 소문자 확장자 문자열
-    """
-    return os.path.splitext(file_path)[1].lower()
+    if not filename:
+        # multipart 요청에 파일명이 아예 없는 경우 file.filename이 None일 수 있다.
+        raise ValueError("유효하지 않은 파일명입니다")
+    # Windows 경로 구분자(\)까지 제거하기 위해 POSIX 구분자로 통일 후 basename만 취한다.
+    name = os.path.basename(filename.replace("\\", "/"))
+    if not name or name in (".", ".."):
+        raise ValueError("유효하지 않은 파일명입니다")
+    return name

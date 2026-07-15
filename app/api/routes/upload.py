@@ -4,6 +4,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.services.rag_pipeline import shared_rag_pipeline
 from app.models.schemas import UploadResponse
+from app.utils.file_handler import sanitize_filename
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -19,9 +20,15 @@ async def upload_document(file: UploadFile = File(...)):
         file: 업로드할 파일 (PDF, TXT, MD 허용)
     """
     try:
+        # file.filename은 클라이언트가 제어하는 값이므로 경로 조작 시퀀스를 먼저 제거한다.
+        try:
+            safe_filename = sanitize_filename(file.filename)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="유효하지 않은 파일명입니다.")
+
         # 허용 확장자 화이트리스트 방식. 블랙리스트보다 안전하다.
         allowed_extensions = [".pdf", ".txt", ".md"]
-        file_ext = Path(file.filename).suffix.lower()
+        file_ext = Path(safe_filename).suffix.lower()
 
         if file_ext not in allowed_extensions:
             raise HTTPException(
@@ -31,12 +38,12 @@ async def upload_document(file: UploadFile = File(...)):
 
         upload_dir = Path(settings.UPLOAD_DIR)
         upload_dir.mkdir(parents=True, exist_ok=True)
-        file_path = upload_dir / file.filename
+        file_path = upload_dir / safe_filename
 
         contents = await file.read()
 
         # 파일 내용을 읽은 후에 크기를 확인한다 (읽기 전엔 정확한 크기를 모름).
-        max_size = getattr(settings, "MAX_FILE_SIZE_MB", 50)
+        max_size = settings.MAX_UPLOAD_SIZE_MB
         file_size_mb = len(contents) / (1024 * 1024)
         if file_size_mb > max_size:
             raise HTTPException(
@@ -51,7 +58,7 @@ async def upload_document(file: UploadFile = File(...)):
         result = await run_in_threadpool(
             shared_rag_pipeline.process_document,
             file_path=str(file_path),
-            filename=file.filename
+            filename=safe_filename
         )
 
         return UploadResponse(

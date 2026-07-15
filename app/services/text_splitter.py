@@ -172,10 +172,9 @@ class TextSplitter:
         if not page_numbers:
             return 1
 
-        word_count = 0
-        for char in full_text[:char_pos]:
-            if char == '\n':
-                word_count += 1
+        # page_numbers는 단어 하나당 하나의 항목을 가지므로(DocumentLoader 참고),
+        # 같은 기준(공백 분리 단어 수)으로 char_pos 이전 단어 수를 세어야 인덱스가 맞는다.
+        word_count = len(full_text[:char_pos].split())
 
         if word_count < len(page_numbers):
             return page_numbers[word_count]

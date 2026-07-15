@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.routes import health, documents, upload, chat
+from app.services.rag_pipeline import shared_rag_pipeline
 from app.utils.logger import logger
 
 app = FastAPI(
@@ -39,6 +40,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    # Neo4j 드라이버는 명시적으로 닫지 않으면 커넥션 풀이 프로세스 종료 시까지 유지된다.
+    shared_rag_pipeline.graph_store.close()
     logger.info(f"=== {settings.APP_NAME} 종료 ===")
 
 

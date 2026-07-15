@@ -9,6 +9,10 @@ interface Message {
   sources?: ChatSource[];
 }
 
+// URL 소스 기능이 추가되기 전까지 출처 패널을 임시로 비활성화한다.
+// 리터럴 false를 조건에 직접 쓰면 ESLint(no-constant-binary-expression)가 걸리므로 이름 있는 상수로 뺀다.
+const SHOW_SOURCE_PANEL = false;
+
 export default function MessageBubble({ message }: { message: Message }) {
   const [showSources, setShowSources] = useState(false);
   const isUser = message.role === "user";
@@ -38,8 +42,8 @@ export default function MessageBubble({ message }: { message: Message }) {
           )}
         </div>
 
-        {/* 출처 패널: URL 소스 기능 추가 시 false를 조건으로 교체 */}
-        {false && !isUser && message.sources && message.sources.length > 0 && (() => {
+        {/* 출처 패널: URL 소스 기능 추가 시 SHOW_SOURCE_PANEL을 true로 교체 */}
+        {SHOW_SOURCE_PANEL && !isUser && message.sources && message.sources.length > 0 && (() => {
           const uniqueSources = Array.from(
             new Map(message.sources.map((s) => [s.filename ?? s.document_id, s])).values()
           );

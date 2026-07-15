@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 import os
 
@@ -62,15 +62,10 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_TRACING_ENABLED: bool = True
 
-    LANGCHAIN_TRACING_V2: bool = True
-    LANGCHAIN_PROJECT: str = "rag-server"
-
     LANGGRAPH_MAX_RETRIES: int = 3
     LANGGRAPH_ROUTING_ENABLED: bool = True
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
 
 settings = Settings()

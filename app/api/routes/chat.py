@@ -8,7 +8,6 @@ from app.models.schemas import (
     CreateDatasetRequest, CreateDatasetResponse,
     RunEvalRequest, RunEvalResponse, FeedbackRequest,
 )
-from app.services.embedding import EmbeddingService
 from app.services.llm import LLMService
 from app.services.conversation import conversation_manager
 from app.services.rag_pipeline import shared_rag_pipeline
@@ -17,8 +16,10 @@ from app.utils.logger import logger
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# HuggingFace 모델 로드를 포함하므로 요청마다 새로 생성하면 매 요청이 수 초씩 지연된다.
-embedding_service = EmbeddingService()
+# shared_rag_pipeline이 이미 로드한 임베딩 모델을 재사용한다.
+# 별도로 EmbeddingService()를 생성하면 SentenceTransformer 모델이 중복 로드되어
+# 메모리와 시작 시간을 낭비한다.
+embedding_service = shared_rag_pipeline.embedding_service
 llm_service = LLMService()
 
 
@@ -96,6 +97,11 @@ async def query(request: QueryRequest):
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
             logger.warning(f"LLM API rate limit exceeded: {e}")
             raise HTTPException(status_code=429, detail="LLM API의 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.")
+        # LLM 제공자 서버의 일시적 과부하(get_llm의 자동 재시도로도 해결되지 않은 경우).
+        if "503" in str(e) or "UNAVAILABLE" in str(e):
+            logger.warning(f"LLM API temporarily unavailable: {e}")
+            raise HTTPException(status_code=503, detail="LLM 서비스가 일시적으로 응답할 수 없습니다. 잠시 후 다시 시도해주세요.")
+        logger.error(f"질문 처리 오류: {str(e)}")
         raise HTTPException(status_code=500, detail="질문 처리 중 오류가 발생했습니다.")
 
 
@@ -148,25 +154,17 @@ async def query_stream(request: QueryRequest):
             ])
             chat_history = conversation_manager.get_conversation(request.session_id)
 
-            from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-            from app.services.llm import RAG_SYSTEM_PROMPT
+            from app.services.llm import build_rag_messages
             from app.services.rag_pipeline import langchain_llm
 
-            messages = [SystemMessage(content=RAG_SYSTEM_PROMPT)]
-            for msg in chat_history:
-                if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-            messages.append(
-                HumanMessage(content=f"참고 문서:\n{context}\n\n질문: {request.question}")
-            )
+            # LLMService.generate_answer와 동일한 메시지 조립 로직을 공유한다.
+            messages = build_rag_messages(request.question, context, chat_history)
 
             assembled_answer = ""
             async for chunk in langchain_llm.astream(messages):
-                if chunk.content:
-                    assembled_answer += chunk.content
-                    yield f'data: {json.dumps({"type": "chunk", "text": chunk.content}, ensure_ascii=False)}\n\n'
+                if chunk.text:
+                    assembled_answer += chunk.text
+                    yield f'data: {json.dumps({"type": "chunk", "text": chunk.text}, ensure_ascii=False)}\n\n'
 
             conversation_manager.add_message(request.session_id, "user", request.question)
             conversation_manager.add_message(request.session_id, "assistant", assembled_answer)
@@ -249,6 +247,11 @@ async def query_langgraph(request: LangGraphQueryRequest):
             raise HTTPException(
                 status_code=429,
                 detail="LLM API의 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."
+            )
+        if "503" in str(e) or "UNAVAILABLE" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail="LLM 서비스가 일시적으로 응답할 수 없습니다. 잠시 후 다시 시도해주세요."
             )
         raise HTTPException(
             status_code=500,

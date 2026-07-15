@@ -1,11 +1,21 @@
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from app.core.config import settings
 from app.utils.logger import logger
 
 
-def get_llm(provider: Optional[str] = None, temperature: float = 0.2) -> BaseChatModel:
+def apply_llm_retry(runnable):
+    """
+    LLM 호출 재시도 정책을 한 곳에서 관리한다.
+    429(rate limit), 503(UNAVAILABLE) 등 일시적 오류는 지수 백오프로 최대 3회 자동 재시도한다.
+    잘못된 API 키 같은 영구적 오류는 재시도해도 어차피 실패하므로 그대로 재발생한다.
+    """
+    return runnable.with_retry(stop_after_attempt=3, wait_exponential_jitter=True)
+
+
+def get_llm(provider: Optional[str] = None, temperature: float = 0.2,
+            use_retry: bool = True) -> BaseChatModel:
     """
     설정에 따라 적절한 LLM 인스턴스를 생성해 반환하는 팩토리 함수.
     LangChain의 공통 인터페이스를 반환하므로, LLM_PROVIDER를 바꿔도 호출 코드를 수정할 필요가 없다.
@@ -14,49 +24,57 @@ def get_llm(provider: Optional[str] = None, temperature: float = 0.2) -> BaseCha
         provider   : LLM 공급자 ("openai", "upstage", "gemini", "ollama", "anthropic").
                      None이면 config의 LLM_PROVIDER를 사용한다.
         temperature: 0.0(결정적) ~ 1.0(창의적). RAG는 사실 기반 답변이 중요하므로 기본값 0.2.
+        use_retry  : True면 apply_llm_retry로 감싼 RunnableRetry를 반환한다.
+                     RunnableRetry는 with_structured_output 같은 BaseChatModel 전용 메서드를
+                     위임하지 않으므로, 그런 메서드가 필요한 호출부는 False로 원본 모델을 받아
+                     조합을 마친 뒤 apply_llm_retry를 직접 적용해야 한다.
 
     Returns:
-        LangChain BaseChatModel 인터페이스를 구현한 LLM 인스턴스
+        LangChain BaseChatModel 인스턴스 (use_retry=True면 재시도 래퍼가 씌워진 Runnable)
     """
     provider = provider or settings.LLM_PROVIDER
     try:
         if provider == "openai":
             from langchain_openai import ChatOpenAI
-            return ChatOpenAI(
+            llm = ChatOpenAI(
                 api_key=settings.OPENAI_API_KEY,
                 model_name=settings.OPENAI_CHAT_MODEL,
                 temperature=temperature
             )
         elif provider == "upstage":
             from langchain_upstage import ChatUpstage
-            return ChatUpstage(
+            llm = ChatUpstage(
                 api_key=settings.UPSTAGE_API_KEY,
                 model=settings.UPSTAGE_CHAT_MODEL,
                 temperature=temperature
             )
         elif provider == "gemini":
             from langchain_google_genai import ChatGoogleGenerativeAI
-            return ChatGoogleGenerativeAI(
+            llm = ChatGoogleGenerativeAI(
                 google_api_key=settings.GEMINI_API_KEY,
                 model=settings.GEMINI_CHAT_MODEL,
                 temperature=temperature
             )
         elif provider == "ollama":
             from langchain_community.chat_models import ChatOllama
-            return ChatOllama(
+            llm = ChatOllama(
                 base_url=settings.OLLAMA_BASE_URL,
                 model=settings.OLLAMA_MODEL,
                 temperature=temperature
             )
         elif provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
-            return ChatAnthropic(
+            llm = ChatAnthropic(
                 api_key=settings.ANTHROPIC_API_KEY,
                 model_name=settings.ANTHROPIC_CHAT_MODEL,
                 temperature=temperature
             )
         else:
             raise ValueError(f"지원하지 않는 LLM 공급자: {provider}")
+
+        if use_retry:
+            return apply_llm_retry(llm)
+        return llm
     except Exception as e:
         logger.error(f"LLM 초기화 실패 ({provider}): {e}")
         raise
@@ -87,28 +105,12 @@ class LLMService:
             LLM이 생성한 답변 문자열
         """
         try:
-            system_prompt = """당신은 제공된 문서를 기반으로 답변하는 도우미입니다.
-
-중요한 규칙:
-1. 제공된 문서에서만 정보를 가져와 답변하세요
-2. 문서에 없는 내용은 추측하지 마세요
-3. 답변할 수 없으면 "문서에서 찾을 수 없습니다"라고 말하세요
-4. 항상 사실에 기반한 답변을 제공하세요"""
-
-            messages = [SystemMessage(content=system_prompt)]
-
-            if chat_history:
-                for msg in chat_history:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    else:
-                        messages.append(AIMessage(content=msg["content"]))
-
-            messages.append(HumanMessage(content=f"참고 문서:\n{context}\n\n질문: {question}"))
-
+            messages = build_rag_messages(question, context, chat_history)
             response = self.model.invoke(messages)
             logger.debug("LLM 답변 생성 완료")
-            return response.content
+            # response.content는 모델에 따라 문자열 또는 콘텐츠 블록 리스트(예: 최신 Gemini의 thinking 응답)일 수 있다.
+            # .text는 두 경우 모두 안전하게 문자열로 평탄화해준다.
+            return response.text
         except Exception as e:
             logger.error(f"LLM 답변 생성 오류: {str(e)}")
             raise
@@ -129,6 +131,32 @@ RAG_SYSTEM_PROMPT = """당신은 제공된 문서를 기반으로 답변하는 �
 3. 답변할 수 없으면 "문서에서 찾을 수 없습니다"라고 말하세요
 4. 항상 사실에 기반한 답변을 제공하세요
 5. 답변은 명확하고 구조적으로 작성하세요"""
+
+
+def build_rag_messages(question: str, context: str, chat_history: Optional[List[Dict]] = None) -> List:
+    """
+    RAG_SYSTEM_PROMPT + 대화 히스토리 + 현재 질문을 LangChain 메시지 리스트로 조립한다.
+    LLMService.generate_answer와 chat.py의 스트리밍 엔드포인트가 동일한 로직을 각자
+    구현하다 보면 조용히 어긋날 수 있으므로(예: 히스토리 role 처리 방식), 이 함수 하나로 통일한다.
+
+    Parameters:
+        question    : 사용자 질문
+        context     : 검색된 참고 문서 텍스트
+        chat_history: 이전 대화 목록 [{"role": "user"|"assistant", "content": "..."}]
+
+    Returns:
+        [SystemMessage, ...history, HumanMessage] 형태의 LangChain 메시지 리스트
+    """
+    messages = [SystemMessage(content=RAG_SYSTEM_PROMPT)]
+    if chat_history:
+        for msg in chat_history:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            else:
+                messages.append(AIMessage(content=msg["content"]))
+    messages.append(HumanMessage(content=f"참고 문서:\n{context}\n\n질문: {question}"))
+    return messages
+
 
 RAG_QA_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(RAG_SYSTEM_PROMPT),
